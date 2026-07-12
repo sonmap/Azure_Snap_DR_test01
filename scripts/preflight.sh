@@ -118,9 +118,9 @@ validate_cloud_init() {
   local template="$ROOT_DIR/terraform/10-primary/cloud-init.yaml.tftpl"
   local extracted
   extracted="$(mktemp)"
-  trap 'rm -f "$extracted"' RETURN
 
   if grep -R "cloud-init-tail.yamlfrag" "$ROOT_DIR/terraform/10-primary" >/dev/null 2>&1; then
+    rm -f "$extracted"
     echo "ERROR: obsolete cloud-init fragment reference remains." >&2
     return 1
   fi
@@ -135,11 +135,17 @@ validate_cloud_init() {
   ' "$template" > "$extracted"
 
   if [[ ! -s "$extracted" ]]; then
+    rm -f "$extracted"
     echo "ERROR: runcmd could not be extracted from cloud-init template." >&2
     return 1
   fi
 
-  bash -n "$extracted"
+  if ! bash -n "$extracted"; then
+    rm -f "$extracted"
+    return 1
+  fi
+
+  rm -f "$extracted"
   echo "cloud-init runcmd shell syntax: OK"
 }
 
