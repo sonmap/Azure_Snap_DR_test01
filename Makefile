@@ -13,7 +13,7 @@ help:
 	@echo "  make clean-plans    - Delete saved *.tfplan files"
 
 validate:
-	./scripts/preflight.sh
+	bash scripts/preflight.sh
 
 network:
 	terraform -chdir=terraform/00-network init
@@ -24,29 +24,29 @@ primary:
 	terraform -chdir=terraform/10-primary apply
 
 primary-check:
-	./scripts/validate-primary.sh
+	bash scripts/validate-primary.sh
 
 automation:
 	terraform -chdir=terraform/20-automation init
 	terraform -chdir=terraform/20-automation apply
 
 dr:
-	./scripts/dr-failover.sh
+	bash scripts/dr-failover.sh
 
 dr-destroy:
-	./scripts/dr-destroy.sh
+	bash scripts/dr-destroy.sh
 
 tm-status:
-	./scripts/traffic-switch.sh status
+	bash scripts/traffic-switch.sh status
 
 tm-primary:
-	./scripts/traffic-switch.sh primary
+	bash scripts/traffic-switch.sh primary
 
 tm-dr:
-	./scripts/traffic-switch.sh dr
+	bash scripts/traffic-switch.sh dr
 
 destroy-all:
-	DESTROY_APPROVED=yes ./scripts/destroy-all.sh
+	DESTROY_APPROVED=yes bash scripts/destroy-all.sh
 
 clean-plans:
 	find terraform -type f -name '*.tfplan' -delete
