@@ -1,0 +1,77 @@
+digraph AzureSnapshotDR {
+  graph [
+    rankdir=LR,
+    bgcolor="white",
+    pad="0.35",
+    nodesep="0.45",
+    ranksep="0.75",
+    fontname="DejaVu Sans",
+    label="Azure Snapshot Cold DR  |  Korea Central → Japan East",
+    labelloc="t",
+    fontsize=24
+  ];
+  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=11, margin="0.16,0.10", color="#4B5563", fillcolor="#F8FAFC"];
+  edge [fontname="DejaVu Sans", fontsize=10, color="#64748B", arrowsize=0.8];
+
+  users [label="Users\napp.example.com", shape=oval, fillcolor="#E0F2FE", color="#0284C7"];
+  tm [label="Azure Traffic Manager\nPriority routing\nKRC: Enabled / Priority 1\nJPE: Disabled / Priority 2", fillcolor="#DBEAFE", color="#2563EB"];
+
+  subgraph cluster_krc {
+    label="Korea Central (Primary)";
+    color="#16A34A";
+    penwidth=2;
+    style="rounded";
+    fontname="DejaVu Sans";
+    fontsize=16;
+
+    krc_pip [label="Static Public IP\n+ DNS label", fillcolor="#DCFCE7", color="#16A34A"];
+    krc_lb [label="Standard Public Load Balancer\nProbe: HTTP /health :8080", fillcolor="#DCFCE7", color="#16A34A"];
+    krc_vnet [label="VNet 10.10.0.0/16\nSubnet 10.10.10.0/24\nNSG", fillcolor="#F0FDF4", color="#16A34A"];
+    krc_vm [label="VM: vm-app-krc-01\nTomcat + MySQL\nsystemd auto-start", fillcolor="#FEF3C7", color="#D97706"];
+    krc_os [label="OS Managed Disk", fillcolor="#FFF7ED", color="#EA580C"];
+    krc_data [label="Data Managed Disk\n/data/mysql", fillcolor="#FFF7ED", color="#EA580C"];
+    runbook [label="Azure Automation Runbook\nStop services → Snapshot\nRestart services → CopyStart", fillcolor="#EDE9FE", color="#7C3AED"];
+    src_snap [label="Incremental Snapshots\nOS + DATA-LUN-0", fillcolor="#F3E8FF", color="#9333EA"];
+
+    krc_pip -> krc_lb;
+    krc_lb -> krc_vm [label="Backend pool"];
+    krc_vnet -> krc_vm [dir=none, style=dashed];
+    krc_vm -> krc_os [dir=none];
+    krc_vm -> krc_data [dir=none];
+    runbook -> krc_vm [label="VM Run Command", style=dashed];
+    runbook -> src_snap [label="Create"];
+  }
+
+  subgraph cluster_jpe {
+    label="Japan East (Cold DR)";
+    color="#DC2626";
+    penwidth=2;
+    style="rounded";
+    fontname="DejaVu Sans";
+    fontsize=16;
+
+    jpe_pip [label="Static Public IP\n+ DNS label", fillcolor="#FEE2E2", color="#DC2626"];
+    jpe_lb [label="Standard Public Load Balancer\nBackend empty at normal time", fillcolor="#FEE2E2", color="#DC2626"];
+    jpe_vnet [label="VNet 10.20.0.0/16\nSubnet 10.20.10.0/24\nNSG", fillcolor="#FEF2F2", color="#DC2626"];
+    target_snap [label="Copied Incremental Snapshots\nCompletionPercent = 100", fillcolor="#F3E8FF", color="#9333EA"];
+    tf [label="Terraform 30-dr\nSnapshot → Managed Disks\nCreate NIC + VM\nAttach LB backend", fillcolor="#CCFBF1", color="#0F766E"];
+    jpe_vm [label="VM: vm-app-jpe-dr-01\nCreated only during failover", fillcolor="#FEF3C7", color="#D97706"];
+    jpe_disks [label="Restored OS + MySQL Disks", fillcolor="#FFF7ED", color="#EA580C"];
+    validate [label="systemd + Ansible\nMount → MySQL → Tomcat\nValidate /health", fillcolor="#ECFCCB", color="#65A30D"];
+
+    jpe_pip -> jpe_lb;
+    jpe_vnet -> jpe_vm [dir=none, style=dashed];
+    target_snap -> tf;
+    tf -> jpe_disks;
+    tf -> jpe_vm;
+    jpe_disks -> jpe_vm [dir=none];
+    jpe_vm -> jpe_lb [label="Backend pool", dir=back];
+    jpe_vm -> validate;
+  }
+
+  users -> tm [label="DNS query"];
+  tm -> krc_pip [label="Normal traffic"];
+  tm -> jpe_pip [label="After approved failover", style=dashed, color="#DC2626"];
+  src_snap -> target_snap [label="Managed CopyStart\nKorea → Japan", color="#7C3AED", penwidth=2];
+  validate -> tm [label="Enable JPE / Disable KRC\nafter HTTP 200", color="#DC2626", penwidth=2];
+}

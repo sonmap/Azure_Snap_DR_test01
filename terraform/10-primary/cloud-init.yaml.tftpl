@@ -1,0 +1,272 @@
+#cloud-config
+package_update: true
+package_upgrade: false
+
+packages:
+  - openjdk-11-jdk
+  - tomcat9
+  - mysql-server
+  - jq
+  - curl
+  - rsync
+  - parted
+
+write_files:
+  - path: /usr/local/sbin/update-dr-metadata.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      COMPUTE_JSON=$(curl -fsS -H Metadata:true \
+        "http://169.254.169.254/metadata/instance/compute?api-version=2021-02-01")
+      NETWORK_JSON=$(curl -fsS -H Metadata:true \
+        "http://169.254.169.254/metadata/instance/network/interface/0/ipv4/ipAddress/0?api-version=2021-02-01")
+
+      AZURE_VM_NAME=$(echo "$COMPUTE_JSON" | jq -r '.name')
+      AZURE_REGION=$(echo "$COMPUTE_JSON" | jq -r '.location')
+      PRIVATE_IP=$(echo "$NETWORK_JSON" | jq -r '.privateIpAddress')
+      OS_HOSTNAME=$(hostname)
+      UPDATED_AT=$(date -u +"%Y-%m-%d %H:%M:%S")
+
+      mysql --protocol=socket -uroot <<SQL
+      CREATE DATABASE IF NOT EXISTS ${mysql_database};
+      CREATE TABLE IF NOT EXISTS ${mysql_database}.instance_info (
+        id INT NOT NULL PRIMARY KEY,
+        azure_vm_name VARCHAR(128) NOT NULL,
+        os_hostname VARCHAR(128) NOT NULL,
+        private_ip VARCHAR(64) NOT NULL,
+        azure_region VARCHAR(64) NOT NULL,
+        updated_at_utc DATETIME NOT NULL
+      );
+      INSERT INTO ${mysql_database}.instance_info
+        (id, azure_vm_name, os_hostname, private_ip, azure_region, updated_at_utc)
+      VALUES
+        (1, '$AZURE_VM_NAME', '$OS_HOSTNAME', '$PRIVATE_IP', '$AZURE_REGION', '$UPDATED_AT')
+      ON DUPLICATE KEY UPDATE
+        azure_vm_name=VALUES(azure_vm_name),
+        os_hostname=VALUES(os_hostname),
+        private_ip=VALUES(private_ip),
+        azure_region=VALUES(azure_region),
+        updated_at_utc=VALUES(updated_at_utc);
+      SQL
+
+      install -d -o tomcat -g tomcat /var/lib/tomcat9/webapps/ROOT
+
+      cat > /var/lib/tomcat9/webapps/ROOT/index.html <<HTML
+      <!doctype html>
+      <html lang="ko">
+      <head>
+        <meta charset="utf-8">
+        <title>Azure Snapshot DR Demo</title>
+        <style>
+          body { font-family: sans-serif; max-width: 800px; margin: 40px auto; }
+          table { border-collapse: collapse; width: 100%; }
+          td, th { border: 1px solid #ccc; padding: 10px; text-align: left; }
+        </style>
+      </head>
+      <body>
+        <h1>Azure Snapshot DR Demo</h1>
+        <table>
+          <tr><th>Azure VM Name</th><td>$AZURE_VM_NAME</td></tr>
+          <tr><th>OS Hostname</th><td>$OS_HOSTNAME</td></tr>
+          <tr><th>Private IP</th><td>$PRIVATE_IP</td></tr>
+          <tr><th>Azure Region</th><td>$AZURE_REGION</td></tr>
+          <tr><th>Updated UTC</th><td>$UPDATED_AT</td></tr>
+        </table>
+        <p>MySQL: ${mysql_database}.instance_info</p>
+      </body>
+      </html>
+      HTML
+
+      chown tomcat:tomcat /var/lib/tomcat9/webapps/ROOT/index.html
+
+  - path: /usr/local/sbin/update-health.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      HEALTH_FILE=/var/lib/tomcat9/webapps/ROOT/health
+      install -d -o tomcat -g tomcat /var/lib/tomcat9/webapps/ROOT
+
+      if systemctl is-active --quiet mysql \
+        && mysqladmin --protocol=socket -uroot ping --silent \
+        && mountpoint -q /var/lib/mysql; then
+        printf 'OK\n' > "$HEALTH_FILE"
+        chown tomcat:tomcat "$HEALTH_FILE"
+      else
+        rm -f "$HEALTH_FILE"
+      fi
+
+  - path: /usr/local/sbin/dr-stop-services.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      rm -f /var/lib/tomcat9/webapps/ROOT/health
+      systemctl stop tomcat9 || true
+      systemctl stop mysql || true
+      sync
+
+  - path: /usr/local/sbin/dr-start-services.sh
+    owner: root:root
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+
+      mountpoint -q /data || mount /data
+      mountpoint -q /var/lib/mysql || mount /var/lib/mysql
+
+      systemctl enable mysql tomcat9 dr-metadata.service dr-metadata.timer dr-health.service dr-health.timer
+      systemctl start mysql
+
+      for i in $(seq 1 60); do
+        if mysqladmin --protocol=socket -uroot ping --silent; then
+          break
+        fi
+        sleep 2
+      done
+
+      systemctl restart dr-metadata.service
+      systemctl start tomcat9
+      systemctl restart dr-health.service
+      systemctl start dr-metadata.timer dr-health.timer
+
+  - path: /etc/systemd/system/dr-metadata.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Update Azure VM region and IP metadata
+      Wants=network-online.target
+      After=network-online.target mysql.service
+      Requires=mysql.service
+      Before=tomcat9.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/update-dr-metadata.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/dr-metadata.timer
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Refresh DR metadata every five minutes
+
+      [Timer]
+      OnBootSec=2min
+      OnUnitActiveSec=5min
+      Unit=dr-metadata.service
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /etc/systemd/system/dr-health.service
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Publish Tomcat health file when MySQL and data disk are ready
+      After=mysql.service tomcat9.service
+
+      [Service]
+      Type=oneshot
+      ExecStart=/usr/local/sbin/update-health.sh
+
+      [Install]
+      WantedBy=multi-user.target
+
+  - path: /etc/systemd/system/dr-health.timer
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      Description=Refresh DR health every 30 seconds
+
+      [Timer]
+      OnBootSec=30s
+      OnUnitActiveSec=30s
+      Unit=dr-health.service
+
+      [Install]
+      WantedBy=timers.target
+
+  - path: /etc/systemd/system/mysql.service.d/10-data-disk.conf
+    owner: root:root
+    permissions: '0644'
+    content: |
+      [Unit]
+      RequiresMountsFor=/var/lib/mysql
+      After=network-online.target
+
+runcmd:
+  - |
+      set -euxo pipefail
+
+      systemctl stop tomcat9 || true
+      systemctl stop mysql || true
+
+      DATA_DEVICE="/dev/disk/azure/scsi1/lun0"
+
+      for i in $(seq 1 150); do
+        if [ -b "$DATA_DEVICE" ]; then
+          break
+        fi
+        sleep 2
+      done
+
+      if [ ! -b "$DATA_DEVICE" ]; then
+        echo "Azure data disk LUN 0 was not attached in time." >&2
+        exit 1
+      fi
+
+      if ! blkid "$DATA_DEVICE" >/dev/null 2>&1; then
+        mkfs.ext4 -F "$DATA_DEVICE"
+      fi
+
+      DATA_UUID=$(blkid -s UUID -o value "$DATA_DEVICE")
+      mkdir -p /data
+
+      grep -q "$DATA_UUID" /etc/fstab || \
+        echo "UUID=$DATA_UUID /data ext4 defaults,nofail 0 2" >> /etc/fstab
+
+      mount /data || mount -a
+      mkdir -p /data/mysql
+
+      if [ ! -f /data/mysql/.migrated ]; then
+        rsync -aHAX /var/lib/mysql/ /data/mysql/
+        touch /data/mysql/.migrated
+      fi
+
+      chown -R mysql:mysql /data/mysql
+
+      mkdir -p /var/lib/mysql
+      grep -q "^/data/mysql /var/lib/mysql " /etc/fstab || \
+        echo "/data/mysql /var/lib/mysql none bind 0 0" >> /etc/fstab
+
+      mountpoint -q /var/lib/mysql || mount --bind /data/mysql /var/lib/mysql
+      chown mysql:mysql /var/lib/mysql
+
+      systemctl daemon-reload
+      systemctl enable mysql tomcat9 dr-metadata.service dr-metadata.timer dr-health.service dr-health.timer
+      systemctl start mysql
+
+      for i in $(seq 1 60); do
+        if mysqladmin --protocol=socket -uroot ping --silent; then
+          break
+        fi
+        sleep 2
+      done
+
+      systemctl restart dr-metadata.service
+      systemctl start tomcat9
+      systemctl restart dr-health.service
+      systemctl start dr-metadata.timer dr-health.timer

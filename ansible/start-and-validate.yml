@@ -1,0 +1,72 @@
+---
+- name: Start and validate restored Tomcat and MySQL services
+  hosts: all
+  become: true
+  gather_facts: true
+
+  tasks:
+    - name: Mount all fstab filesystems
+      ansible.builtin.command: mount -a
+      changed_when: false
+
+    - name: Verify MySQL data volume is mounted
+      ansible.builtin.command: mountpoint -q /var/lib/mysql
+      changed_when: false
+
+    - name: Enable and start MySQL
+      ansible.builtin.systemd_service:
+        name: mysql
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Wait for MySQL socket
+      ansible.builtin.command: mysqladmin --protocol=socket -uroot ping --silent
+      register: mysql_ping
+      retries: 30
+      delay: 2
+      until: mysql_ping.rc == 0
+      changed_when: false
+
+    - name: Refresh Azure VM region and IP metadata
+      ansible.builtin.command: /usr/local/sbin/update-dr-metadata.sh
+      changed_when: true
+
+    - name: Enable and start Tomcat
+      ansible.builtin.systemd_service:
+        name: tomcat9
+        enabled: true
+        state: started
+
+    - name: Publish health file
+      ansible.builtin.command: /usr/local/sbin/update-health.sh
+      changed_when: true
+
+    - name: Wait for Tomcat port
+      ansible.builtin.wait_for:
+        host: 127.0.0.1
+        port: 8080
+        timeout: 120
+
+    - name: Validate local health endpoint
+      ansible.builtin.uri:
+        url: http://127.0.0.1:8080/health
+        return_content: true
+        status_code: 200
+      register: health_response
+
+    - name: Query DR metadata from MySQL
+      ansible.builtin.command: >
+        mysql --protocol=socket -uroot -NBe
+        "SELECT azure_vm_name, os_hostname, private_ip, azure_region, updated_at_utc
+         FROM dr_demo.instance_info WHERE id=1;"
+      register: db_info
+      changed_when: false
+
+    - name: Show MySQL DR metadata
+      ansible.builtin.debug:
+        var: db_info.stdout
+
+    - name: Show health validation
+      ansible.builtin.debug:
+        msg: "Tomcat /health returned {{ health_response.status }} with body '{{ health_response.content | trim }}'."

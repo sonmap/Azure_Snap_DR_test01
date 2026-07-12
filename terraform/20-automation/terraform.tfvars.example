@@ -1,0 +1,5 @@
+subscription_id        = "00000000-0000-0000-0000-000000000000"
+enable_schedule        = false
+snapshot_interval_hour = 4
+retention_days         = 7
+wait_for_copy          = true

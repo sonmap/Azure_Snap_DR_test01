@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="1250" viewBox="0 0 1100 1250">
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#475569"/></marker>
+    <style>
+      .title { font: 700 30px Arial, sans-serif; fill: #0f172a; }
+      .txt { font: 18px Arial, sans-serif; fill: #0f172a; }
+      .small { font: 15px Arial, sans-serif; fill: #334155; }
+      .box { stroke-width: 2; rx: 16; ry: 16; }
+      .line { stroke: #475569; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect width="1100" height="1250" fill="#fff"/>
+  <text x="550" y="50" text-anchor="middle" class="title">Approved Failover Flow</text>
+
+  <g text-anchor="middle">
+    <rect x="250" y="90" width="600" height="75" fill="#fee2e2" stroke="#dc2626" class="box"/>
+    <text x="550" y="135" class="txt">1. Detect and confirm Korea Central outage</text>
+
+    <rect x="250" y="210" width="600" height="75" fill="#fef3c7" stroke="#d97706" class="box"/>
+    <text x="550" y="255" class="txt">2. Operator approval and primary fencing</text>
+
+    <rect x="250" y="330" width="600" height="95" fill="#ede9fe" stroke="#7c3aed" class="box"/>
+    <text x="550" y="370" class="txt">3. Select latest complete Japan RecoverySet</text>
+    <text x="550" y="400" class="small">OS + DATA-LUN-0, CompletionPercent = 100</text>
+
+    <rect x="250" y="470" width="600" height="75" fill="#ccfbf1" stroke="#0f766e" class="box"/>
+    <text x="550" y="515" class="txt">4. Terraform creates Managed OS/Data Disks</text>
+
+    <rect x="250" y="590" width="600" height="95" fill="#ccfbf1" stroke="#0f766e" class="box"/>
+    <text x="550" y="630" class="txt">5. Terraform creates DR NIC and VM</text>
+    <text x="550" y="660" class="small">Attach restored disks and Load Balancer backend</text>
+
+    <rect x="250" y="730" width="600" height="95" fill="#ecfccb" stroke="#65a30d" class="box"/>
+    <text x="550" y="770" class="txt">6. systemd starts the recovered services</text>
+    <text x="550" y="800" class="small">Mount → MySQL → metadata update → Tomcat</text>
+
+    <polygon points="550,870 880,950 550,1030 220,950" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+    <text x="550" y="940" class="txt">7. Japan Load Balancer /health</text>
+    <text x="550" y="970" class="small">HTTP 200?</text>
+
+    <rect x="120" y="1090" width="430" height="100" fill="#dbeafe" stroke="#2563eb" class="box"/>
+    <text x="335" y="1130" class="txt">8. Enable JPE and wait Online</text>
+    <text x="335" y="1160" class="small">Then disable KRC endpoint</text>
+
+    <rect x="650" y="1090" width="330" height="100" fill="#fee2e2" stroke="#dc2626" class="box"/>
+    <text x="815" y="1130" class="txt">Do not switch traffic</text>
+    <text x="815" y="1160" class="small">Investigate and retry</text>
+  </g>
+
+  <line x1="550" y1="165" x2="550" y2="210" class="line"/>
+  <line x1="550" y1="285" x2="550" y2="330" class="line"/>
+  <line x1="550" y1="425" x2="550" y2="470" class="line"/>
+  <line x1="550" y1="545" x2="550" y2="590" class="line"/>
+  <line x1="550" y1="685" x2="550" y2="730" class="line"/>
+  <line x1="550" y1="825" x2="550" y2="870" class="line"/>
+  <line x1="400" y1="994" x2="335" y2="1090" class="line"/>
+  <text x="340" y="1040" class="small">Healthy</text>
+  <line x1="700" y1="994" x2="815" y2="1090" class="line"/>
+  <text x="760" y="1040" class="small">Failed</text>
+</svg>

@@ -1,0 +1,21 @@
+digraph FailoverFlow {
+  graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.3", ranksep="0.45", fontname="DejaVu Sans", label="Approved Failover Flow", labelloc="t", fontsize=22];
+  node [shape=box, style="rounded,filled", fontname="DejaVu Sans", fontsize=11, fillcolor="#F8FAFC", color="#475569", margin="0.18,0.10"];
+  edge [fontname="DejaVu Sans", fontsize=10, color="#64748B", arrowsize=0.8];
+
+  detect [label="1. Detect and confirm Korea Central outage", fillcolor="#FEE2E2", color="#DC2626"];
+  approve [label="2. Operator approval and primary fencing", fillcolor="#FEF3C7", color="#D97706"];
+  select [label="3. Select latest complete Japan East RecoverySet\nOS + DATA-LUN-0", fillcolor="#EDE9FE", color="#7C3AED"];
+  disks [label="4. Terraform creates Managed OS/Data Disks", fillcolor="#CCFBF1", color="#0F766E"];
+  vm [label="5. Terraform creates DR NIC and VM\nAttach disks and Load Balancer backend", fillcolor="#CCFBF1", color="#0F766E"];
+  service [label="6. systemd mounts data disk\nStart MySQL → metadata update → Tomcat", fillcolor="#ECFCCB", color="#65A30D"];
+  health [label="7. Validate Japan Load Balancer /health = HTTP 200", shape=diamond, fillcolor="#DBEAFE", color="#2563EB"];
+  switch [label="8. Traffic Manager\nDisable KRC endpoint / Enable JPE endpoint", fillcolor="#DBEAFE", color="#2563EB"];
+  user [label="9. New DNS resolutions connect to Japan East", fillcolor="#E0F2FE", color="#0284C7"];
+  hold [label="Do not switch traffic\nInvestigate and retry", fillcolor="#FEE2E2", color="#DC2626"];
+
+  detect -> approve -> select -> disks -> vm -> service -> health;
+  health -> switch [label="Healthy"];
+  health -> hold [label="Failed", color="#DC2626"];
+  switch -> user;
+}

@@ -1,0 +1,2 @@
+[dr]
+203.0.113.50 ansible_user=azureuser ansible_ssh_private_key_file=~/.ssh/azure_snapshot_dr
