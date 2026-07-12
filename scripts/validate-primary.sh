@@ -24,12 +24,15 @@ ssh \
 
    echo "===== cloud-init ====="
    sudo cloud-init status --long
-   test "$(sudo cloud-init status --format json | python3 -c "import json,sys; print(json.load(sys.stdin).get(\"status\",\"\"))")" = "done"
+   sudo cloud-init status | grep -q "status: done"
 
    echo "===== disks ====="
    findmnt /data
    findmnt /var/lib/mysql
-   test "$(findmnt -n -o SOURCE /var/lib/mysql)" = "/data/mysql"
+   mountpoint -q /data
+   mountpoint -q /var/lib/mysql
+   grep -qE "^[^#]+[[:space:]]+/data[[:space:]]+ext4" /etc/fstab
+   grep -qE "^/data/mysql[[:space:]]+/var/lib/mysql[[:space:]]+none[[:space:]]+bind" /etc/fstab
 
    echo "===== services ====="
    sudo systemctl is-active mysql tomcat9 dr-metadata.timer dr-health.timer
