@@ -83,9 +83,12 @@ resource "azurerm_linux_virtual_machine" "primary" {
     version   = "latest"
   }
 
-  custom_data = base64encode(templatefile("${path.module}/cloud-init.yaml.tftpl", {
-    mysql_database = var.mysql_database
-  }))
+  custom_data = base64encode(join("\n", [
+    templatefile("${path.module}/cloud-init.yaml.tftpl", {
+      mysql_database = var.mysql_database
+    }),
+    file("${path.module}/cloud-init-tail.yamlfrag")
+  ]))
 
   boot_diagnostics {}
 
