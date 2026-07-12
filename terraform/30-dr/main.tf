@@ -18,6 +18,11 @@ data "azurerm_lb" "dr" {
   resource_group_name = var.dr_resource_group_name
 }
 
+data "azurerm_lb_backend_address_pool" "dr" {
+  name            = var.dr_backend_pool_name
+  loadbalancer_id = data.azurerm_lb.dr.id
+}
+
 data "azurerm_public_ip" "dr_service" {
   name                = var.dr_service_public_ip_name
   resource_group_name = var.dr_resource_group_name
@@ -40,10 +45,6 @@ locals {
   recovery_set     = data.external.latest_snapshots.result.recovery_set
   os_snapshot_id   = data.external.latest_snapshots.result.os_snapshot_id
   data_snapshot_id = data.external.latest_snapshots.result.data_snapshot_id
-  dr_backend_pool_id = one([
-    for pool in data.azurerm_lb.dr.backend_address_pool : pool.id
-    if pool.name == var.dr_backend_pool_name
-  ])
 }
 
 resource "azurerm_managed_disk" "os" {
@@ -102,7 +103,7 @@ resource "azurerm_network_interface" "dr" {
 resource "azurerm_network_interface_backend_address_pool_association" "dr" {
   network_interface_id    = azurerm_network_interface.dr.id
   ip_configuration_name   = "ipconfig1"
-  backend_address_pool_id = local.dr_backend_pool_id
+  backend_address_pool_id = data.azurerm_lb_backend_address_pool.dr.id
 }
 
 resource "azurerm_virtual_machine" "dr" {
