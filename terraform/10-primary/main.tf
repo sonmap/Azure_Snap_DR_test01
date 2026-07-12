@@ -18,11 +18,9 @@ data "azurerm_lb" "primary" {
   resource_group_name = var.resource_group_name
 }
 
-locals {
-  primary_backend_pool_id = one([
-    for pool in data.azurerm_lb.primary.backend_address_pool : pool.id
-    if pool.name == var.load_balancer_backend_pool_name
-  ])
+data "azurerm_lb_backend_address_pool" "primary" {
+  name            = var.load_balancer_backend_pool_name
+  loadbalancer_id = data.azurerm_lb.primary.id
 }
 
 resource "azurerm_public_ip" "management" {
@@ -51,7 +49,7 @@ resource "azurerm_network_interface" "primary" {
 resource "azurerm_network_interface_backend_address_pool_association" "primary" {
   network_interface_id    = azurerm_network_interface.primary.id
   ip_configuration_name   = "ipconfig1"
-  backend_address_pool_id = local.primary_backend_pool_id
+  backend_address_pool_id = data.azurerm_lb_backend_address_pool.primary.id
 }
 
 resource "azurerm_linux_virtual_machine" "primary" {
