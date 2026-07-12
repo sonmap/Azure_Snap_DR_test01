@@ -43,8 +43,9 @@ variable "dr_vm_name" {
 }
 
 variable "vm_size" {
-  type    = string
-  default = "Standard_B2ms"
+  description = "DR VM size available within both the subscription family quota and current Japan East capacity. Override in terraform.tfvars when required."
+  type        = string
+  default     = "Standard_D2s_v4"
 }
 
 variable "os_disk_sku" {
