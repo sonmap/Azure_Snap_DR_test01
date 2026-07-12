@@ -43,8 +43,9 @@ variable "ssh_public_key_path" {
 }
 
 variable "vm_size" {
-  type    = string
-  default = "Standard_B2ms"
+  description = "VM size available within both the subscription family quota and current regional capacity. Override in terraform.tfvars when required."
+  type        = string
+  default     = "Standard_D2s_v4"
 }
 
 variable "os_disk_size_gb" {
